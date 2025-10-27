@@ -50,8 +50,9 @@ class MLP:
         return self.layers(x)
 
 
-class TransformerBlock:
+class TransformerBlock(nn.Module):
     def __init__(self, input_dim: int, hidden: int, nheads: int):
+        super().__init__()
         self.mha = AttentionModule(input_dim=input_dim, hidden=hidden, nheads=nheads)
         self.mlp = MLP(input_dim, hidden)
         self.norm = nn.LayerNorm(input_dim)
@@ -80,8 +81,33 @@ def positionalEncoding(x: torch.Tensor, n: int = 1000):
     return mat
 
 
+class Encoder(nn.Module):
+    def __init__(self, n: int, args):
+        super().__init__()
+        self.input_dim = args["input_dim"]
+        self.hidden = args["hidden"]
+        self.nheads = args["nheads"]
+        self.transformer_blocks = nn.ModuleList(
+            [
+                TransformerBlock(self.input_dim, self.hidden, self.nheads)
+                for i in range(n)
+            ]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        pos_enc = positionalEncoding(x)
+        x += pos_enc
+        for i, block in enumerate(self.transformer_blocks):
+            x = block.forward(x)
+        return x
+
+
 if __name__ == "__main__":
     x = torch.randn(100, 5, 10)
-    print(positionalEncoding(x).shape)
-    transformer_block = TransformerBlock(input_dim=10, hidden=128, nheads=8)
-    print(transformer_block.forward(x).shape)
+    args = {
+        "input_dim": 10,
+        "hidden": 128,
+        "nheads": 8,
+    }
+    encoder = Encoder(5, args)
+    print(encoder.forward(x).shape)
