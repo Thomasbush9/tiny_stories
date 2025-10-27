@@ -8,11 +8,8 @@ import torch.nn as nn
 
 
 class AttentionModule:
-    def __init__(
-        self, input_dim: int, output_dim: int, hidden: int = 128, nheads: int = 8
-    ):
+    def __init__(self, input_dim: int, hidden: int = 128, nheads: int = 8):
         self.input_dim = input_dim
-        self.output_dim = output_dim
         assert hidden % nheads == 0, (
             "Hidden dimension must be divisible by number of heads"
         )
@@ -42,20 +39,32 @@ class AttentionModule:
 
 
 class MLP:
-    def __init__(self, input_dim: int, hidden_dim: int):
+    def __init__(self, input_dim: int, hidden: int):
         self.layers = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+            nn.Linear(input_dim, hidden),
             nn.ReLU(),
-            nn.Linear(hidden_dim, input_dim),
+            nn.Linear(hidden, input_dim),
         )
 
     def forward(self, x):
         return self.layers(x)
 
 
+class TransformerBlock:
+    def __init__(self, input_dim: int, hidden: int, nheads: int):
+        self.mha = AttentionModule(input_dim=input_dim, hidden=hidden, nheads=nheads)
+        self.mlp = MLP(input_dim, hidden)
+        self.norm = nn.LayerNorm(input_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.mha.forward(x)
+        x = self.norm(out + x)
+        out = self.mlp.forward(x)
+        out = self.norm(out + x)
+        return out
+
+
 if __name__ == "__main__":
-    attention = AttentionModule(10, 10)
     x = torch.randn(100, 5, 10)
-    h = attention.forward(x)
-    mlp = MLP(10, 64)
-    h = mlp.forward(h)
+    transformer_block = TransformerBlock(input_dim=10, hidden=128, nheads=8)
+    print(transformer_block.forward(x).shape)
