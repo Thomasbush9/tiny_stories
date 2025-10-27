@@ -64,7 +64,24 @@ class TransformerBlock:
         return out
 
 
+def positionalEncoding(x: torch.Tensor, n: int = 1000):
+    """Applies positional encoding using sin, cos funcs"""
+    seq_len = x.shape[1]
+    d = x.shape[-1]
+    col = torch.arange(seq_len).unsqueeze(-1)
+    row = torch.arange(d).unsqueeze(0)
+    exp = 2 * (row // 2) / d
+    scaling_term = torch.pow(n, exp)
+    mat = col / scaling_term
+    even_ids = torch.arange(0, d, 2)
+    odd_ids = even_ids + 1
+    mat[..., even_ids] = torch.sin(mat[..., even_ids])
+    mat[..., odd_ids] = torch.cos(mat[..., odd_ids])
+    return mat
+
+
 if __name__ == "__main__":
     x = torch.randn(100, 5, 10)
+    print(positionalEncoding(x).shape)
     transformer_block = TransformerBlock(input_dim=10, hidden=128, nheads=8)
     print(transformer_block.forward(x).shape)
