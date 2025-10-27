@@ -40,11 +40,22 @@ class AttentionModule:
         )
         return self.proj_out(attn_values)
 
-class MLP(nn.Module):
-    def __init__(self, *args, **kwargs) -> None:
+
+class MLP:
+    def __init__(self, input_dim: int, hidden_dim: int):
+        self.layers = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, input_dim),
+        )
+
+    def forward(self, x):
+        return self.layers(x)
 
 
 if __name__ == "__main__":
     attention = AttentionModule(10, 10)
     x = torch.randn(100, 5, 10)
     h = attention.forward(x)
+    mlp = MLP(10, 64)
+    h = mlp.forward(h)
