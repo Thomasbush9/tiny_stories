@@ -2,38 +2,49 @@
 
 import math
 
+import einops
 import torch
 import torch.nn as nn
 
 
 class AttentionModule:
     def __init__(
-        self, input_dim: int, output_dim: int, hidden: int = 128, nheads: int = 5
+        self, input_dim: int, output_dim: int, hidden: int = 128, nheads: int = 8
     ):
         self.input_dim = input_dim
         self.output_dim = output_dim
+        assert hidden % nheads == 0, (
+            "Hidden dimension must be divisible by number of heads"
+        )
+        self.c = hidden // nheads
         self.nheads = nheads
         self.hidden = hidden
 
         # define the linear projections
-        self.projq = nn.Linear(input_dim, hidden)
-        self.projk = nn.Linear(input_dim, hidden)
-        self.projv = nn.Linear(input_dim, hidden)
-        self.proj_out = nn.Linear(hidden, input_dim)
+        self.projq = nn.Linear(input_dim, self.hidden)
+        self.projk = nn.Linear(input_dim, self.hidden)
+        self.projv = nn.Linear(input_dim, self.hidden)
+        self.proj_out = nn.Linear(self.hidden, input_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        Q = self.projq(x)
-        K = self.projk(x)
-        V = self.projv(x)
+        new_shape = x.shape[:2] + (self.nheads, self.c)
+        Q = self.projq(x).reshape(new_shape) / math.sqrt(self.c)
+        K = self.projk(x).reshape(new_shape)
+        V = self.projv(x).reshape(new_shape)
         # get attn values
-        affinities = torch.einsum("...qj, ...ki->...qk", Q, K)
+        affinities = torch.einsum("...hq, ...hk->...hqk", Q, K)
         attn_weights = torch.softmax(affinities, dim=-1)
-        attn_values = torch.einsum("...qk, ...kc->...qc", attn_weights, V)
+        attn_values = torch.einsum("...hqk, ...hk->...hq", attn_weights, V)
+        attn_values = einops.rearrange(
+            attn_values, "... h c -> ... (h c)", h=self.nheads, c=self.c
+        )
         return self.proj_out(attn_values)
+
+class MLP(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
 
 
 if __name__ == "__main__":
     attention = AttentionModule(10, 10)
-    x = torch.randn(100, 10)
+    x = torch.randn(100, 5, 10)
     h = attention.forward(x)
-    print(h.shape)
