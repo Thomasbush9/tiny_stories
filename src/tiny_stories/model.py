@@ -7,8 +7,11 @@ import torch
 import torch.nn as nn
 
 
-class AttentionModule:
-    def __init__(self, input_dim: int, hidden: int = 128, nheads: int = 8):
+class AttentionModule(nn.Module):
+    def __init__(
+        self, input_dim: int, hidden: int = 128, nheads: int = 8, with_mask: bool = True
+    ):
+        super().__init__()
         self.input_dim = input_dim
         assert hidden % nheads == 0, (
             "Hidden dimension must be divisible by number of heads"
@@ -16,6 +19,7 @@ class AttentionModule:
         self.c = hidden // nheads
         self.nheads = nheads
         self.hidden = hidden
+        self.with_mask = with_mask
 
         # define the linear projections
         self.projq = nn.Linear(input_dim, self.hidden)
@@ -30,6 +34,10 @@ class AttentionModule:
         V = self.projv(x).reshape(new_shape)
         # get attn values
         affinities = torch.einsum("...hq, ...hk->...hqk", Q, K)
+        if self.with_mask:
+            mask = torch.triu(torch.ones(affinities.shape[-2:]), 1)
+            affinities = affinities + mask.masked_fill(mask == 1, -torch.inf)
+
         attn_weights = torch.softmax(affinities, dim=-1)
         attn_values = torch.einsum("...hqk, ...hk->...hq", attn_weights, V)
         attn_values = einops.rearrange(
