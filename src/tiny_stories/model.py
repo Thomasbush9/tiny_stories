@@ -1,6 +1,7 @@
 """Script with the models trained using the Tiny Stories dataset."""
 
 import math
+from typing import Dict
 
 import einops
 import torch
@@ -110,6 +111,24 @@ class Encoder(nn.Module):
         return x
 
 
+class DecoderBlock(nn.Module):
+    def __init__(self, input_dim: int, hidden: int, nheads: int):
+        super().__init__()
+        self.block_1 = AttentionModule(input_dim, hidden, nheads)
+        self.norm = nn.LayerNorm(input_dim)
+        self.block_2 = TransformerBlock(input_dim, hidden, nheads)
+
+    def forward(self, x: torch.Tensor, enc_h: torch.Tensor) -> torch.Tensor:
+        pos_enc = positionalEncoding(x)
+        x += pos_enc
+        out = self.block_1.forward(x)
+        out = self.norm(out)
+        # add residual
+        out += enc_h
+        out = self.block_2.forward(out)
+        return out
+
+
 if __name__ == "__main__":
     x = torch.randn(100, 5, 10)
     args = {
@@ -118,4 +137,6 @@ if __name__ == "__main__":
         "nheads": 8,
     }
     encoder = Encoder(5, args)
-    print(encoder.forward(x).shape)
+    decoderblock = DecoderBlock(10, 128, 8)
+    enc_h = encoder.forward(x)
+    print(decoderblock.forward(x, enc_h).shape)
