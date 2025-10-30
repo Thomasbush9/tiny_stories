@@ -131,6 +131,7 @@ class CrossAttention(nn.Module):
         K = self.proj_k(h_enc).reshape(new_shape_enc).movedim(-2, -3)
         V = self.proj_v(h_enc).reshape(new_shape_enc).movedim(-2, -3)
         # scores
+        # TODO add mask pad for encoder
         scores = torch.einsum("...qd, ...kd->...qk", Q, K) / math.sqrt(self.d)
         probabilities = torch.softmax(scores, dim=-1)
         scaled_values = torch.einsum("...sh, ...hd-> ...sd", probabilities, V)
@@ -141,25 +142,24 @@ class CrossAttention(nn.Module):
 
 
 class DecoderBlock(nn.Module):
-    def __init__(self, input_dim: int, hidden: int, nheads: int):
+    def __init__(self, input_dim, d, nheads):
         super().__init__()
-        self.block_1 = AttentionModule(input_dim, hidden, nheads)
+        self.mha = AttentionModule(input_dim, d, nheads)
         self.norm = nn.LayerNorm(input_dim)
-        self.cross_attention(input_dim, input_dim, hidden)
-        self.block_2 = TransformerBlock(input_dim, hidden, nheads)
 
-    def forward(self, x: torch.Tensor, enc_h: torch.Tensor) -> torch.Tensor:
-        out = self.block_1.forward(x)
+        self.cross_att = CrossAttention(input_dim, input_dim, d, nheads)
+        self.ff = nn.Sequential(nn.Linear(input_dim, d), nn.Linear(d, input_dim))
+
+    def forward(self, x: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        assert x.shape[-1] == h.shape[-1], "input dims must be the same"
+        out = self.mha(x) + x
         out = self.norm(out)
-        # add residual
-        out += enc_h
-        out = self.block_2.forward(out)
+        out = self.cross_att(out, h) + out
+        out = self.norm(out)
+        out = self.ff(out) + out
+        out = self.norm(out)
         return out
 
-
-# TODO cross attention key/values from encoder
-
-# TODO: FNN sublayer
 
 if __name__ == "__main__":
     x = torch.randn(100, 5, 10)
@@ -170,6 +170,6 @@ if __name__ == "__main__":
     }
     encoder = Encoder(5, args)
     enc_h = encoder.forward(x)
-    y = torch.randn(100, 6, 8)
-    cross_attn = CrossAttention(8, 10, 64, 4)
-    print(cross_attn(y, enc_h).shape)
+    y = torch.randn(100, 7, 10)
+    decoder_b = DecoderBlock(10, 128, 8)
+    print(decoder_b(y, enc_h).shape)
