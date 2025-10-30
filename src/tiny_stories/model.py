@@ -112,9 +112,12 @@ class Encoder(nn.Module):
 
 
 class CrossAttention(nn.Module):
-    def __init__(self, dim_dec: int, dim_enc: int, d: int):
+    def __init__(self, dim_dec: int, dim_enc: int, d: int, nheads: int):
         super().__init__()
+        assert d % nheads == 0, "Hidden dimension must be divisible by heads"
+        self.hidden = d // nheads
         self.d = d
+        self.nheads = nheads
         self.proj_q = nn.Linear(dim_dec, d)
         self.proj_k = nn.Linear(dim_enc, d)
         self.proj_v = nn.Linear(dim_enc, d)
@@ -122,14 +125,18 @@ class CrossAttention(nn.Module):
 
     def forward(self, x_dec: torch.Tensor, h_enc: torch.Tensor) -> torch.Tensor:
         # projections
-        Q = self.proj_q(x_dec)
-        K = self.proj_k(h_enc)
-        V = self.proj_v(h_enc)
+        new_shape_dec = x_dec.shape[:2] + (self.nheads, self.hidden)
+        new_shape_enc = h_enc.shape[:2] + (self.nheads, self.hidden)
+        Q = self.proj_q(x_dec).reshape(new_shape_dec).movedim(-2, -3)
+        K = self.proj_k(h_enc).reshape(new_shape_enc).movedim(-2, -3)
+        V = self.proj_v(h_enc).reshape(new_shape_enc).movedim(-2, -3)
         # scores
         scores = torch.einsum("...qd, ...kd->...qk", Q, K) / math.sqrt(self.d)
         probabilities = torch.softmax(scores, dim=-1)
-        print(probabilities.shape)
         scaled_values = torch.einsum("...sh, ...hd-> ...sd", probabilities, V)
+        scaled_values = einops.rearrange(
+            scaled_values, "... h l d-> ... l (h d)", h=self.nheads, d=self.hidden
+        )
         return self.proj_out(scaled_values)
 
 
@@ -138,6 +145,7 @@ class DecoderBlock(nn.Module):
         super().__init__()
         self.block_1 = AttentionModule(input_dim, hidden, nheads)
         self.norm = nn.LayerNorm(input_dim)
+        self.cross_attention(input_dim, input_dim, hidden)
         self.block_2 = TransformerBlock(input_dim, hidden, nheads)
 
     def forward(self, x: torch.Tensor, enc_h: torch.Tensor) -> torch.Tensor:
@@ -161,9 +169,7 @@ if __name__ == "__main__":
         "nheads": 8,
     }
     encoder = Encoder(5, args)
-    decoderblock = DecoderBlock(10, 128, 8)
     enc_h = encoder.forward(x)
-    print(decoderblock.forward(x, enc_h).shape)
     y = torch.randn(100, 6, 8)
-    cross_attn = CrossAttention(8, 10, 10)
+    cross_attn = CrossAttention(8, 10, 64, 4)
     print(cross_attn(y, enc_h).shape)
