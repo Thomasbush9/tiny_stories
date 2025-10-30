@@ -30,6 +30,7 @@ class AttentionModule(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         new_shape = x.shape[:2] + (self.nheads, self.c)
+        print(f"{x.shape=}, {new_shape=}")
         Q = self.projq(x).reshape(new_shape) / math.sqrt(self.c)
         K = self.projk(x).reshape(new_shape)
         V = self.projv(x).reshape(new_shape)
@@ -161,15 +162,34 @@ class DecoderBlock(nn.Module):
         return out
 
 
+class Decoder(nn.Module):
+    def __init__(self, args):
+        super().__init__()
+        self.args = args
+        self.blocks = nn.ModuleList(
+            [
+                DecoderBlock(args["input_dim"], args["hidden"], args["nheads"])
+                for _ in range(args["n"])
+            ]
+        )
+
+    def forward(self, x: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        out = x + positionalEncoding(x)
+        for block in self.blocks:
+            out = block(out, h)
+        return out
+
+
 if __name__ == "__main__":
     x = torch.randn(100, 5, 10)
     args = {
         "input_dim": 10,
         "hidden": 128,
+        "n": 8,
         "nheads": 8,
     }
     encoder = Encoder(5, args)
+    decoder = Decoder(args)
     enc_h = encoder.forward(x)
     y = torch.randn(100, 7, 10)
-    decoder_b = DecoderBlock(10, 128, 8)
-    print(decoder_b(y, enc_h).shape)
+    print(decoder(y, enc_h).shape)
