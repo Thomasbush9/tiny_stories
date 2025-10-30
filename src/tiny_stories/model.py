@@ -111,6 +111,28 @@ class Encoder(nn.Module):
         return x
 
 
+class CrossAttention(nn.Module):
+    def __init__(self, dim_dec: int, dim_enc: int, d: int):
+        super().__init__()
+        self.d = d
+        self.proj_q = nn.Linear(dim_dec, d)
+        self.proj_k = nn.Linear(dim_enc, d)
+        self.proj_v = nn.Linear(dim_enc, d)
+        self.proj_out = nn.Linear(d, dim_dec)
+
+    def forward(self, x_dec: torch.Tensor, h_enc: torch.Tensor) -> torch.Tensor:
+        # projections
+        Q = self.proj_q(x_dec)
+        K = self.proj_k(h_enc)
+        V = self.proj_v(h_enc)
+        # scores
+        scores = torch.einsum("...qd, ...kd->...qk", Q, K) / math.sqrt(self.d)
+        probabilities = torch.softmax(scores, dim=-1)
+        print(probabilities.shape)
+        scaled_values = torch.einsum("...sh, ...hd-> ...sd", probabilities, V)
+        return self.proj_out(scaled_values)
+
+
 class DecoderBlock(nn.Module):
     def __init__(self, input_dim: int, hidden: int, nheads: int):
         super().__init__()
@@ -119,8 +141,6 @@ class DecoderBlock(nn.Module):
         self.block_2 = TransformerBlock(input_dim, hidden, nheads)
 
     def forward(self, x: torch.Tensor, enc_h: torch.Tensor) -> torch.Tensor:
-        pos_enc = positionalEncoding(x)
-        x += pos_enc
         out = self.block_1.forward(x)
         out = self.norm(out)
         # add residual
@@ -128,6 +148,10 @@ class DecoderBlock(nn.Module):
         out = self.block_2.forward(out)
         return out
 
+
+# TODO cross attention key/values from encoder
+
+# TODO: FNN sublayer
 
 if __name__ == "__main__":
     x = torch.randn(100, 5, 10)
@@ -140,3 +164,6 @@ if __name__ == "__main__":
     decoderblock = DecoderBlock(10, 128, 8)
     enc_h = encoder.forward(x)
     print(decoderblock.forward(x, enc_h).shape)
+    y = torch.randn(100, 6, 8)
+    cross_attn = CrossAttention(8, 10, 10)
+    print(cross_attn(y, enc_h).shape)
